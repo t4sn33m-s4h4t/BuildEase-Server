@@ -192,6 +192,16 @@ app.post('/admin/reject-agreement', async (req, res) => {
     res.send(result);
 });
 
+// Payment History Routes
+app.post('/payments', async (req, res) => {
+    const payment = req.body;
+    const result = await agreementsCollection.updateOne(
+        { userId: payment.userId, apartmentId: payment.apartmentId },
+        { $push: { payments: payment } }
+    );
+    res.send(result);
+});
+
 run().catch(console.dir);
 
 app.listen(port, () => {
