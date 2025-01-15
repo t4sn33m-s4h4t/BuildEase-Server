@@ -146,6 +146,20 @@ app.post('/coupons', async (req, res) => {
     res.send(result);
 });
 
+
+
+// Announcements Routes
+app.get('/announcements', async (req, res) => {
+    const announcements = await announcementsCollection.find({}).toArray();
+    res.send(announcements);
+});
+
+app.post('/announcements', async (req, res) => {
+    const announcement = req.body;
+    const result = await announcementsCollection.insertOne(announcement);
+    res.send(result);
+});
+
 run().catch(console.dir);
 
 app.listen(port, () => {
