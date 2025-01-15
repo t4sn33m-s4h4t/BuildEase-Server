@@ -100,6 +100,39 @@ app.put('/register', async (req, res) => {
     }
 });
 
+// Apartments Routes
+app.get('/apartments', async (req, res) => {
+    const { page = 1, limit = 6, minRent, maxRent } = req.query;
+    const query = {};
+
+    if (minRent && maxRent) {
+        query.rent = { $gte: parseInt(minRent), $lte: parseInt(maxRent) };
+    }
+
+    const options = {
+        skip: (page - 1) * limit,
+        limit: parseInt(limit),
+    };
+
+    const count = await apartmentsCollection.countDocuments(query);
+    const apartments = await apartmentsCollection.find(query, options).toArray();
+    res.send({ apartments, count });
+});
+
+app.post('/apartments/agreement', async (req, res) => {
+    const agreement = req.body;
+    const existingAgreement = await agreementsCollection.findOne({
+        userId: agreement.userId,
+    });
+
+    if (existingAgreement) {
+        return res.status(400).send({ message: 'Agreement already exists' });
+    }
+
+    agreement.status = 'pending';
+    const result = await agreementsCollection.insertOne(agreement);
+    res.send(result);
+});
 
 run().catch(console.dir);
 
