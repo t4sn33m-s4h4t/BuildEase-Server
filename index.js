@@ -134,6 +134,18 @@ app.post('/apartments/agreement', async (req, res) => {
     res.send(result);
 });
 
+// Coupons Routes
+app.get('/coupons', async (req, res) => {
+    const coupons = await couponsCollection.find({}).toArray();
+    res.send(coupons);
+});
+
+app.post('/coupons', async (req, res) => {
+    const coupon = req.body;
+    const result = await couponsCollection.insertOne(coupon);
+    res.send(result);
+});
+
 run().catch(console.dir);
 
 app.listen(port, () => {
