@@ -160,6 +160,38 @@ app.post('/announcements', async (req, res) => {
     res.send(result);
 });
 
+
+// Admin Routes
+app.get('/admin/members', async (req, res) => {
+    const members = await usersCollection.find({ role: 'member' }).toArray();
+    res.send(members);
+});
+
+app.patch('/admin/members/:id', async (req, res) => {
+    const { id } = req.params;
+    const update = { $set: { role: 'user' } };
+    const result = await usersCollection.updateOne({ _id: new ObjectId(id) }, update);
+    res.send(result);
+});
+
+app.post('/admin/accept-agreement', async (req, res) => {
+    const { agreementId } = req.body;
+    const result = await agreementsCollection.updateOne(
+        { _id: new ObjectId(agreementId) },
+        { $set: { status: 'accepted' } }
+    );
+    res.send(result);
+});
+
+app.post('/admin/reject-agreement', async (req, res) => {
+    const { agreementId } = req.body;
+    const result = await agreementsCollection.updateOne(
+        { _id: new ObjectId(agreementId) },
+        { $set: { status: 'rejected' } }
+    );
+    res.send(result);
+});
+
 run().catch(console.dir);
 
 app.listen(port, () => {
