@@ -12,21 +12,24 @@ app.use(express.json());
 const uri = process.env.MONGO_URI;
 const client = new MongoClient(uri, { useUnifiedTopology: true });
 
+let usersCollection, apartmentsCollection, agreementsCollection, couponsCollection, announcementsCollection;
+
 async function run() {
     try {
         await client.connect();
         console.log('Connected to MongoDB');
 
-        const database = client.db('buildingManagement');
-        const usersCollection = database.collection('users');
-        const apartmentsCollection = database.collection('apartments');
-        const agreementsCollection = database.collection('agreements');
-        const couponsCollection = database.collection('coupons');
-        const announcementsCollection = database.collection('announcements');
+        const database = client.db('BuildEase');
+        usersCollection = database.collection('users');
+        apartmentsCollection = database.collection('apartments');
+        agreementsCollection = database.collection('agreements');
+        couponsCollection = database.collection('coupons');
+        announcementsCollection = database.collection('announcements');
     } catch (error) {
         console.error('Error connecting to MongoDB:', error);
     }
 }
+
 
 const generateToken = (payload) => {
     const secret = process.env.JWT_SECRET;
@@ -104,7 +107,7 @@ app.put('/register', async (req, res) => {
 app.get('/apartments', async (req, res) => {
     const { page = 1, limit = 6, minRent, maxRent } = req.query;
     const query = {};
-
+    console.log(req.query)
     if (minRent && maxRent) {
         query.rent = { $gte: parseInt(minRent), $lte: parseInt(maxRent) };
     }
@@ -119,19 +122,42 @@ app.get('/apartments', async (req, res) => {
     res.send({ apartments, count });
 });
 
+app.get('/apartment/:id', async (req, res) => {
+    const {id} = req.params
+    const apartment = await apartmentsCollection.findOne({_id: new ObjectId(id)});
+    res.send({ apartment });
+});
+
+
+
 app.post('/apartments/agreement', async (req, res) => {
     const agreement = req.body;
     const existingAgreement = await agreementsCollection.findOne({
         userId: agreement.userId,
     });
-
     if (existingAgreement) {
-        return res.status(400).send({ message: 'Agreement already exists' });
+        return res.status(400).send({ message: 'You Have Already Applied' });
     }
 
     agreement.status = 'pending';
     const result = await agreementsCollection.insertOne(agreement);
     res.send(result);
+});
+
+//Agreement Route
+app.get('/agreement/:userEmail', async (req, res) => {
+    try {
+        const { userEmail } = req.params; 
+        const agreement = await agreementsCollection.findOne({ userEmail, role: 'member'});
+        if (agreement) {
+            res.status(200).send({ agreement });
+        } else {
+            res.status(404).send({ message: 'Agreement not found' });
+        }
+    } catch (error) {
+        console.error('Error fetching agreement:', error);
+        res.status(500).send({ message: 'Internal Server Error' });
+    }
 });
 
 // Coupons Routes
