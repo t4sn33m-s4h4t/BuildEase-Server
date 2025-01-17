@@ -36,7 +36,7 @@ const generateToken = (payload) => {
 
 const authenticateUser = (req, res, next) => {
     const token = req.headers.authorization?.split(' ')[1];
-    console.log(req.headers)
+    
     if (!token) return res.status(401).json({ message: 'Unauthorized Access. Login First' });
 
     try {
@@ -87,22 +87,48 @@ app.get('/users',authenticateUser, async (req, res) => {
     }
 });
 
-app.put('/users/:id', authenticateUser, async (req, res) => {
-    const { id } = req.params
+app.put('/users/:userEmail', authenticateUser, async (req, res) => {
+    const { userEmail } = req.params;
     try {
         const updatedUser = await usersCollection.updateOne(
-            { _id: new ObjectId(id) },
-            {
-                $set: {
-                    role: 'pending',
-                }
-            }
+            { email: userEmail },
+            { $set: { role: 'pending' } }
         );
-        res.json({ message: `Member Removed Successfully` });
-    } catch {
+
+        if (updatedUser.matchedCount > 0) {
+            const deleteResult = await agreementsCollection.deleteMany({
+                userEmail: userEmail,
+                status: 'checked',
+            });
+
+            if (deleteResult.deletedCount > 0) {
+                console.log('Deleted agreements:', deleteResult.deletedCount);
+            }
+        }
+
+        console.log(updatedUser.matchedCount, userEmail);
+        res.json({ message: 'Member Removed Successfully' });
+    } catch (error) {
+        console.error('Error:', error);
         res.status(500).json({ message: 'Failed to Remove User' });
     }
 });
+
+app.get('/stats', authenticateUser, async (req, res) =>{
+    try {
+        const totalRooms = await apartmentsCollection.countDocuments();
+        const users = await usersCollection.countDocuments();
+        const members = await usersCollection.countDocuments({role: 'member'});
+        res.json({ 
+            totalRooms,
+            availableRooms: totalRooms-members,
+            users,
+            members
+        });
+    } catch {
+        res.status(500).json({ message: 'Failed to fetch apartments' });
+    }
+})
 
 app.get('/apartments', async (req, res) => {
     const { page = 1, limit = 6, minRent, maxRent } = req.query;
@@ -177,7 +203,6 @@ app.get('/agreement/:userEmail', authenticateUser, async (req, res) => {
 app.put('/agreement/:id', authenticateUser, async (req, res) => {
     const { action } = req.body
     const { id } = req.params
-    console.log(id)
     try {
         const agreement = await agreementsCollection.findOne({ _id: new ObjectId(id) });
         if (!agreement) {
@@ -209,7 +234,6 @@ app.put('/agreement/:id', authenticateUser, async (req, res) => {
 
 app.get('/announcements', async (req, res) => {
     const announcements = await announcementsCollection.find({}).toArray();
-    console.log(announcements)
     res.send(announcements.reverse());
 });
 
