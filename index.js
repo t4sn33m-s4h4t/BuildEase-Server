@@ -36,9 +36,7 @@ const generateToken = (payload) => {
 
 const authenticateUser = (req, res, next) => {
     const token = req.headers.authorization?.split(' ')[1];
-    
     if (!token) return res.status(401).json({ message: 'Unauthorized Access. Login First' });
-
     try {
         req.user = jwt.verify(token, process.env.JWT_SECRET);
         next();
@@ -48,19 +46,20 @@ const authenticateUser = (req, res, next) => {
 };
 
 const verifyEmail = (req, res, next) => {
-    const email = req.body.email || req.params.email;
+    const email = req.query.email || req.body.userEmail;
     if (req.user.email !== email) return res.status(403).json({ message: 'Email Mismatched.' });
+    
     next();
 };
 
 const verifyAdmin = async (req, res, next) => {
     const user = await usersCollection.findOne({ email: req.user.email });
-    console.log(user.role)
     if (!(user.role === 'admin')) return res.status(403).json({ message: 'Admin access required' });
     next();
 };
 
 app.get('/', (req, res) => res.send('Building Management System API is running'));
+
 
 app.post('/jwt', (req, res) => {
     const token = generateToken(req.body);
@@ -86,8 +85,7 @@ app.put('/register', async (req, res) => {
     }
 });
 
-
-app.get('/users',authenticateUser, async (req, res) => {
+app.get('/users',authenticateUser, verifyAdmin, async (req, res) => {
     try {
         const users = await usersCollection.find({ role: "member" }).toArray();
         res.json({ users });
@@ -96,26 +94,20 @@ app.get('/users',authenticateUser, async (req, res) => {
     }
 });
 
-app.put('/users/:userEmail', authenticateUser, async (req, res) => {
-    const { userEmail } = req.params;
+app.put('/users/:email', authenticateUser, verifyAdmin, async (req, res) => {
+    const { email } = req.params;
     try {
         const updatedUser = await usersCollection.updateOne(
-            { email: userEmail },
+            { email: email },
             { $set: { role: 'user' } }
         );
 
         if (updatedUser.matchedCount > 0) {
             const deleteResult = await agreementsCollection.deleteMany({
-                userEmail: userEmail,
+                userEmail: email,
                 status: 'checked',
             });
-
-            if (deleteResult.deletedCount > 0) {
-                console.log('Deleted agreements:', deleteResult.deletedCount);
-            }
         }
-
-        console.log(updatedUser.matchedCount, userEmail);
         res.json({ message: 'Member Removed Successfully' });
     } catch (error) {
         console.error('Error:', error);
@@ -128,10 +120,11 @@ app.get('/stats', authenticateUser, verifyAdmin, async (req, res) =>{
         const totalRooms = await apartmentsCollection.countDocuments();
         const users = await usersCollection.countDocuments();
         const members = await usersCollection.countDocuments({role: 'member'});
+        const Admins = await usersCollection.countDocuments({role: 'admin'});
         res.json({ 
             totalRooms,
             availableRooms: totalRooms-members,
-            users: users-members,
+            users: users-members-Admins,
             members
         });
     } catch {
@@ -162,7 +155,7 @@ app.get('/apartment/:id', async (req, res) => {
     }
 });
 
-app.post('/apartments/agreement', authenticateUser, async (req, res) => {
+app.post('/apartments/agreement', authenticateUser, verifyEmail, async (req, res) => {
     const agreement = {
         ...req.body,
         status: 'pending',
@@ -186,7 +179,7 @@ app.post('/apartments/agreement', authenticateUser, async (req, res) => {
     }
 });
 
-app.get('/agreements', async (req, res) => {
+app.get('/agreements',authenticateUser, verifyAdmin, async (req, res) => {
     try {
         const agreements = await agreementsCollection.find({ status: "pending" }).toArray();
         res.json({ agreements });
@@ -195,21 +188,17 @@ app.get('/agreements', async (req, res) => {
     }
 });
 
-
-app.get('/agreement/:userEmail', authenticateUser, async (req, res) => {
-
+app.get('/agreement/:userEmail', authenticateUser, verifyEmail, async (req, res) => {
     try {
         const agreement = await agreementsCollection.findOne({ userEmail: req.params.userEmail });
         if (agreement) return res.json({ agreement });
-
         res.status(404).json({ message: 'Agreement not found' });
     } catch {
         res.status(500).json({ message: 'Internal server error' });
     }
 });
 
-
-app.put('/agreement/:id', authenticateUser, async (req, res) => {
+app.put('/agreement/:id', authenticateUser, verifyAdmin, async (req, res) => {
     const { action } = req.body
     const { id } = req.params
     try {
@@ -240,13 +229,12 @@ app.put('/agreement/:id', authenticateUser, async (req, res) => {
     }
 });
 
-
-app.get('/announcements', async (req, res) => {
+app.get('/announcements',authenticateUser, async (req, res) => {
     const announcements = await announcementsCollection.find({}).toArray();
     res.send(announcements.reverse());
 });
 
-app.post('/announcements', authenticateUser, async (req, res) => {
+app.post('/announcements', authenticateUser,verifyAdmin, async (req, res) => {
     const announcement = req.body;
     const result = await announcementsCollection.insertOne(announcement);
     res.send(result);
@@ -261,7 +249,7 @@ app.get('/coupons', async (req, res) => {
     }
 });
 
-app.post('/coupons', authenticateUser, async (req, res) => {
+app.post('/coupons', authenticateUser, verifyAdmin, async (req, res) => {
     try {
         const result = await couponsCollection.insertOne(req.body);
         res.json(result);
@@ -270,7 +258,7 @@ app.post('/coupons', authenticateUser, async (req, res) => {
     }
 });
 
-app.delete('/coupon/:id', authenticateUser, async (req, res) => {
+app.delete('/coupon/:id', authenticateUser, verifyAdmin, async (req, res) => {
     try {
         const result = await couponsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
         if (result.deletedCount) res.json({ success: true });
