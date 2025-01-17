@@ -70,11 +70,37 @@ app.put('/register', async (req, res) => {
     if (!name || !email) return res.status(400).json({ message: 'Missing required fields' });
 
     try {
-        const result = await usersCollection.updateOne({ email }, { $set: { name, email } }, { upsert: true });
+        const result = await usersCollection.updateOne({ email }, { $set: { name, email, role: 'user' } }, { upsert: true });
         const token = generateToken({ email });
         res.status(200).json({ message: 'User registered', token });
     } catch {
         res.status(500).json({ message: 'Registration failed' });
+    }
+});
+
+app.get('/users',authenticateUser, async (req, res) => {
+    try {
+        const users = await usersCollection.find({ role: "member" }).toArray();
+        res.json({ users });
+    } catch {
+        res.status(500).json({ message: 'Failed to fetch users' });
+    }
+});
+
+app.put('/users/:id', authenticateUser, async (req, res) => {
+    const { id } = req.params
+    try {
+        const updatedUser = await usersCollection.updateOne(
+            { _id: new ObjectId(id) },
+            {
+                $set: {
+                    role: 'pending',
+                }
+            }
+        );
+        res.json({ message: `Member Removed Successfully` });
+    } catch {
+        res.status(500).json({ message: 'Failed to Remove User' });
     }
 });
 
@@ -102,13 +128,18 @@ app.get('/apartment/:id', async (req, res) => {
 });
 
 app.post('/apartments/agreement', authenticateUser, async (req, res) => {
-    const agreement = { 
-        ...req.body, 
-        status: 'pending', 
-        requestDate: new Date().toISOString() };
-    
+    const agreement = {
+        ...req.body,
+        status: 'pending',
+        requestDate: new Date().toISOString()
+    };
+
     try {
-        const existingAgreement = await agreementsCollection.findOne({ userEmail: agreement.userEmail });
+        const isMember = await usersCollection.findOne({role: 'member', email: agreement.userEmail});
+        if (isMember) {
+            return res.status(400).json({message: 'You are Already a Member'})
+        }
+        const existingAgreement = await agreementsCollection.findOne({ userEmail: agreement.userEmail , status: 'pending'});
         if (existingAgreement) {
             return res.status(400).json({ message: 'You Have Already Applied' });
         }
@@ -120,16 +151,15 @@ app.post('/apartments/agreement', authenticateUser, async (req, res) => {
     }
 });
 
-
-
 app.get('/agreements', async (req, res) => {
     try {
-        const agreements = await agreementsCollection.find().toArray();
+        const agreements = await agreementsCollection.find({ status: "pending" }).toArray();
         res.json({ agreements });
     } catch {
         res.status(500).json({ message: 'Failed to fetch agreements' });
     }
 });
+
 
 app.get('/agreement/:userEmail', authenticateUser, async (req, res) => {
 
@@ -144,10 +174,43 @@ app.get('/agreement/:userEmail', authenticateUser, async (req, res) => {
 });
 
 
+app.put('/agreement/:id', authenticateUser, async (req, res) => {
+    const { action } = req.body
+    const { id } = req.params
+    console.log(id)
+    try {
+        const agreement = await agreementsCollection.findOne({ _id: new ObjectId(id) });
+        if (!agreement) {
+            return res.status(404).json({ message: 'Agreement not found' });
+        }
+        const updatedAgreement = await agreementsCollection.updateOne(
+            { _id: new ObjectId(id) },
+            {
+                $set: {
+                    status: 'checked',
+                }
+            }
+        );
+        if (action === 'accept') {
+            const updatedUser = await usersCollection.updateOne(
+                { email: agreement.userEmail },
+                { $set: { role: 'member' } }
+            )
+            if (updatedUser.matchedCount === 0) {
+                return res.status(404).json({ message: 'User not found' });
+            }
+        }
+        res.json({ message: `Agreement ${action === 'accept' ? 'accepted' : 'rejected'} successfully` });
+    } catch {
+        res.status(500).json({ message: 'Failed to update agreement status' });
+    }
+});
+
+
 app.get('/announcements', async (req, res) => {
     const announcements = await announcementsCollection.find({}).toArray();
     console.log(announcements)
-    res.send(announcements);
+    res.send(announcements.reverse());
 });
 
 app.post('/announcements', authenticateUser, async (req, res) => {
