@@ -48,13 +48,15 @@ const authenticateUser = (req, res, next) => {
 };
 
 const verifyEmail = (req, res, next) => {
-    const email = req.body.email || req.params.email || req.query.email;
-    if (req.user.email !== email) return res.status(403).json({ message: 'Email mismatch' });
+    const email = req.body.email || req.params.email;
+    if (req.user.email !== email) return res.status(403).json({ message: 'Email Mismatched.' });
     next();
 };
 
-const verifyAdmin = (req, res, next) => {
-    if (!req.user.isAdmin) return res.status(403).json({ message: 'Admin access required' });
+const verifyAdmin = async (req, res, next) => {
+    const user = await usersCollection.findOne({ email: req.user.email });
+    console.log(user.role)
+    if (!(user.role === 'admin')) return res.status(403).json({ message: 'Admin access required' });
     next();
 };
 
@@ -67,16 +69,23 @@ app.post('/jwt', (req, res) => {
 
 app.put('/register', async (req, res) => {
     const { name, email } = req.body;
-    if (!name || !email) return res.status(400).json({ message: 'Missing required fields' });
-
     try {
-        const result = await usersCollection.updateOne({ email }, { $set: { name, email, role: 'user' } }, { upsert: true });
+        const user = await usersCollection.findOne({ email });
+        if (!user.role) {
+            await usersCollection.updateOne(
+                { email },
+                { $set: { name, email, role: 'user' } },
+                { upsert: true }
+            );
+        }
         const token = generateToken({ email });
         res.status(200).json({ message: 'User registered', token });
-    } catch {
+    } catch (error) {
+        console.error(error);
         res.status(500).json({ message: 'Registration failed' });
     }
 });
+
 
 app.get('/users',authenticateUser, async (req, res) => {
     try {
@@ -92,7 +101,7 @@ app.put('/users/:userEmail', authenticateUser, async (req, res) => {
     try {
         const updatedUser = await usersCollection.updateOne(
             { email: userEmail },
-            { $set: { role: 'pending' } }
+            { $set: { role: 'user' } }
         );
 
         if (updatedUser.matchedCount > 0) {
@@ -114,7 +123,7 @@ app.put('/users/:userEmail', authenticateUser, async (req, res) => {
     }
 });
 
-app.get('/stats', authenticateUser, async (req, res) =>{
+app.get('/stats', authenticateUser, verifyAdmin, async (req, res) =>{
     try {
         const totalRooms = await apartmentsCollection.countDocuments();
         const users = await usersCollection.countDocuments();
@@ -122,7 +131,7 @@ app.get('/stats', authenticateUser, async (req, res) =>{
         res.json({ 
             totalRooms,
             availableRooms: totalRooms-members,
-            users,
+            users: users-members,
             members
         });
     } catch {
