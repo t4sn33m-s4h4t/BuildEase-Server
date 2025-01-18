@@ -63,7 +63,7 @@ app.get('/', (req, res) => res.send('Building Management System API is running')
 
 app.post('/jwt', (req, res) => {
     const token = generateToken(req.body);
-    res.json({ success: true, token });
+    res.status(200).json({ message: 'User registered', token });
 });
 
 app.put('/register', async (req, res) => {
@@ -156,6 +156,8 @@ app.get('/apartment/:id', async (req, res) => {
 });
 
 app.post('/apartments/agreement', authenticateUser, verifyEmail, async (req, res) => {
+    const user = await usersCollection.findOne({ email: req.user.email });
+    if ((user.role === 'admin')) return res.status(409).json({ message: 'Admin Cannot Make Agreements' });
     const agreement = {
         ...req.body,
         status: 'pending',
@@ -267,6 +269,12 @@ app.delete('/coupon/:id', authenticateUser, verifyAdmin, async (req, res) => {
         res.status(500).json({ message: 'Failed to delete coupon' });
     }
 });
+
+app.get("/userRole", authenticateUser, async (req, res) =>{
+    const user = await usersCollection.findOne({ email: req.user.email });
+    const userRole = user.role ;
+    res.status(200).json({userRole});
+})
 
 app.listen(port, () => console.log(`Server running on http://localhost:${port}`));
 
