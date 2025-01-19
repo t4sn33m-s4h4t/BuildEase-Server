@@ -332,7 +332,7 @@ app.post("/make-payment", authenticateUser, async (req, res) => {
     agreement.saved = 0;
     if (couponCode) {
         let coupon = await couponsCollection.findOne({ code: couponCode });
-        if (coupon && coupon?.percentage) {
+        if (coupon && coupon?.percentage && !(coupon.expired)) {
             agreement.discount = coupon.percentage;
             agreement.saved = (agreement.rent * coupon.percentage / 100)
         } else {
