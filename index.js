@@ -1,23 +1,25 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { MongoClient, ObjectId } = require('mongodb');
-require('dotenv').config();
 const jwt = require('jsonwebtoken');
 const app = express();
 const stripe = require('stripe')(process.env.PAYMENT_SECRET_KEY);
 const port = process.env.PORT || 5000;
 
+
 app.use(cors());
 app.use(express.json());
 
-const uri = process.env.MONGO_URI;
+const uri = `mongodb+srv://${process.env.mongoDBUserName}:${process.env.mongoDBPass}@buildease.q8k7c.mongodb.net/?retryWrites=true&w=majority&appName=BuildEase`
+
 const client = new MongoClient(uri, { useUnifiedTopology: true });
 
 let usersCollection, apartmentsCollection, agreementsCollection, couponsCollection, announcementsCollection, paymentsCollection;
 
 async function run() {
     try {
-        await client.connect();
+        
         const database = client.db('BuildEase');
         usersCollection = database.collection('users');
         apartmentsCollection = database.collection('apartments');
@@ -29,6 +31,7 @@ async function run() {
         console.error('Error connecting to MongoDB:', error);
     }
 }
+
 
 const generateToken = (payload) => {
     const secret = process.env.JWT_SECRET;
@@ -293,7 +296,6 @@ app.get('/payment-history', authenticateUser, async (req, res) => {
 app.post('/payment-history', authenticateUser, async (req, res) => {
     try {
         const payment = req.body;
-        console.log("Received payment details:", payment);
         const result = await paymentsCollection.insertOne(payment);
         res.send(result);
     } catch (error) {
@@ -322,7 +324,6 @@ app.post("/make-payment", authenticateUser, async (req, res) => {
         }
     }
     const totalPrice = (agreement.rent - agreement.saved) * 100
-    console.log(totalPrice)
     const { client_secret } = await stripe.paymentIntents.create({
         amount: totalPrice,
         currency: 'usd',
