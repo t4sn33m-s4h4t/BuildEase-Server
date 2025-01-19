@@ -275,6 +275,23 @@ app.delete('/coupon/:id', authenticateUser, verifyAdmin, async (req, res) => {
     }
 });
 
+app.patch('/coupon/:id', authenticateUser, verifyAdmin, async (req, res) => {
+    try {
+        const result = await couponsCollection.updateOne(
+            { _id: new ObjectId(req.params.id) },
+            { $set: { expired: true } }      
+        );
+        if (result.matchedCount) {
+            res.json({ success: true, message: 'Coupon updated successfully' });
+        } else {
+            res.status(404).json({ message: 'Coupon not found' });
+        }
+    } catch (error) {
+        res.status(500).json({ message: 'Failed to update coupon', error: error.message });
+    }
+});
+
+
 app.get("/userRole", authenticateUser, async (req, res) => {
     const user = await usersCollection.findOne({ email: req.user.email });
     const userRole = user?.role;
