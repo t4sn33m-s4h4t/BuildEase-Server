@@ -13,7 +13,7 @@ app.use(express.json());
 const uri = process.env.MONGO_URI;
 const client = new MongoClient(uri, { useUnifiedTopology: true });
 
-let usersCollection, apartmentsCollection, agreementsCollection, couponsCollection, announcementsCollection;
+let usersCollection, apartmentsCollection, agreementsCollection, couponsCollection, announcementsCollection, paymentsCollection;
 
 async function run() {
     try {
@@ -24,6 +24,7 @@ async function run() {
         agreementsCollection = database.collection('agreements');
         couponsCollection = database.collection('coupons');
         announcementsCollection = database.collection('announcements');
+        paymentsCollection = database.collection('payments');
     } catch (error) {
         console.error('Error connecting to MongoDB:', error);
     }
@@ -276,6 +277,31 @@ app.get("/userRole", authenticateUser, async (req, res) => {
     const userRole = user?.role;
     res.status(200).json({ userRole });
 })
+
+
+app.get('/payment-history', authenticateUser, async (req, res) => {
+    try {
+        const payments = await paymentsCollection.find({ email: req.user.email }).toArray();
+        res.send(payments);
+    } catch (error) {
+        console.error("Error fetching payment history:", error);
+        res.status(500).send({ message: "Failed to fetch payment history." });
+    }
+});
+
+
+app.post('/payment-history', authenticateUser, async (req, res) => {
+    try {
+        const payment = req.body;
+        console.log("Received payment details:", payment);
+        const result = await paymentsCollection.insertOne(payment);
+        res.send(result);
+    } catch (error) {
+        console.error("Error inserting payment:", error);
+        res.status(500).send({ message: "Failed to save payment details." });
+    }
+});
+
 
 app.post("/make-payment", authenticateUser, async (req, res) => {
     const couponCode = req.body.coupon
