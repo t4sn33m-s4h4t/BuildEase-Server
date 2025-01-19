@@ -4,6 +4,7 @@ const { MongoClient, ObjectId } = require('mongodb');
 require('dotenv').config();
 const jwt = require('jsonwebtoken');
 const app = express();
+const stripe = require('stripe')(process.env.PAYMENT_SECRET_KEY);
 const port = process.env.PORT || 5000;
 
 app.use(cors());
@@ -48,13 +49,13 @@ const authenticateUser = (req, res, next) => {
 const verifyEmail = (req, res, next) => {
     const email = req.query.email || req.body.userEmail;
     if (req.user.email !== email) return res.status(403).json({ message: 'Email Mismatched.' });
-    
+
     next();
 };
 
 const verifyAdmin = async (req, res, next) => {
     const user = await usersCollection.findOne({ email: req.user.email });
-    if (!(user.role === 'admin')) return res.status(403).json({ message: 'Admin access required' });
+    if (!(user?.role === 'admin')) return res.status(403).json({ message: 'Admin access required' });
     next();
 };
 
@@ -70,7 +71,7 @@ app.put('/register', async (req, res) => {
     const { name, email } = req.body;
     try {
         const user = await usersCollection.findOne({ email });
-        if (!user.role) {
+        if (!user?.role) {
             await usersCollection.updateOne(
                 { email },
                 { $set: { name, email, role: 'user' } },
@@ -85,7 +86,7 @@ app.put('/register', async (req, res) => {
     }
 });
 
-app.get('/users',authenticateUser, verifyAdmin, async (req, res) => {
+app.get('/users', authenticateUser, verifyAdmin, async (req, res) => {
     try {
         const users = await usersCollection.find({ role: "member" }).toArray();
         res.json({ users });
@@ -115,16 +116,16 @@ app.put('/users/:email', authenticateUser, verifyAdmin, async (req, res) => {
     }
 });
 
-app.get('/stats', authenticateUser, verifyAdmin, async (req, res) =>{
+app.get('/stats', authenticateUser, verifyAdmin, async (req, res) => {
     try {
         const totalRooms = await apartmentsCollection.countDocuments();
         const users = await usersCollection.countDocuments();
-        const members = await usersCollection.countDocuments({role: 'member'});
-        const Admins = await usersCollection.countDocuments({role: 'admin'});
-        res.json({ 
+        const members = await usersCollection.countDocuments({ role: 'member' });
+        const Admins = await usersCollection.countDocuments({ role: 'admin' });
+        res.json({
             totalRooms,
-            availableRooms: totalRooms-members,
-            users: users-members-Admins,
+            availableRooms: totalRooms - members,
+            users: users - members - Admins,
             members
         });
     } catch {
@@ -157,7 +158,7 @@ app.get('/apartment/:id', async (req, res) => {
 
 app.post('/apartments/agreement', authenticateUser, verifyEmail, async (req, res) => {
     const user = await usersCollection.findOne({ email: req.user.email });
-    if ((user.role === 'admin')) return res.status(409).json({ message: 'Admin Cannot Make Agreements' });
+    if ((user?.role === 'admin')) return res.status(409).json({ message: 'Admin Cannot Make Agreements' });
     const agreement = {
         ...req.body,
         status: 'pending',
@@ -165,11 +166,11 @@ app.post('/apartments/agreement', authenticateUser, verifyEmail, async (req, res
     };
 
     try {
-        const isMember = await usersCollection.findOne({role: 'member', email: agreement.userEmail});
+        const isMember = await usersCollection.findOne({ role: 'member', email: agreement.userEmail });
         if (isMember) {
-            return res.status(400).json({message: 'You are Already a Member'})
+            return res.status(400).json({ message: 'You are Already a Member' })
         }
-        const existingAgreement = await agreementsCollection.findOne({ userEmail: agreement.userEmail , status: 'pending'});
+        const existingAgreement = await agreementsCollection.findOne({ userEmail: agreement.userEmail, status: 'pending' });
         if (existingAgreement) {
             return res.status(400).json({ message: 'You Have Already Applied' });
         }
@@ -181,7 +182,7 @@ app.post('/apartments/agreement', authenticateUser, verifyEmail, async (req, res
     }
 });
 
-app.get('/agreements',authenticateUser, verifyAdmin, async (req, res) => {
+app.get('/agreements', authenticateUser, verifyAdmin, async (req, res) => {
     try {
         const agreements = await agreementsCollection.find({ status: "pending" }).toArray();
         res.json({ agreements });
@@ -192,7 +193,7 @@ app.get('/agreements',authenticateUser, verifyAdmin, async (req, res) => {
 
 app.get('/agreement/:userEmail', authenticateUser, verifyEmail, async (req, res) => {
     try {
-        const agreement = await agreementsCollection.findOne({ userEmail: req.params.userEmail });
+        const agreement = await agreementsCollection.findOne({ userEmail: req.params.userEmail, status: 'checked' });
         if (agreement) return res.json({ agreement });
         res.status(404).json({ message: 'Agreement not found' });
     } catch {
@@ -231,12 +232,12 @@ app.put('/agreement/:id', authenticateUser, verifyAdmin, async (req, res) => {
     }
 });
 
-app.get('/announcements',authenticateUser, async (req, res) => {
+app.get('/announcements', authenticateUser, async (req, res) => {
     const announcements = await announcementsCollection.find({}).toArray();
     res.send(announcements.reverse());
 });
 
-app.post('/announcements', authenticateUser,verifyAdmin, async (req, res) => {
+app.post('/announcements', authenticateUser, verifyAdmin, async (req, res) => {
     const announcement = req.body;
     const result = await announcementsCollection.insertOne(announcement);
     res.send(result);
@@ -270,10 +271,41 @@ app.delete('/coupon/:id', authenticateUser, verifyAdmin, async (req, res) => {
     }
 });
 
-app.get("/userRole", authenticateUser, async (req, res) =>{
+app.get("/userRole", authenticateUser, async (req, res) => {
     const user = await usersCollection.findOne({ email: req.user.email });
-    const userRole = user.role ;
-    res.status(200).json({userRole});
+    const userRole = user?.role;
+    res.status(200).json({ userRole });
+})
+
+app.post("/make-payment", authenticateUser, async (req, res) => {
+    const couponCode = req.body.coupon
+    let agreement = await agreementsCollection.findOne({ userEmail: req.user.email, status: "checked" });
+    if (!agreement) {
+        return res.status(400).send({ message: "Apartment Not Found" })
+    }
+    agreement.discount = 0
+    agreement.saved = 0;
+    if (couponCode) {
+        let coupon = await couponsCollection.findOne({ code: couponCode });
+        if (coupon && coupon?.percentage) {
+            agreement.discount = coupon.percentage;
+            agreement.saved = (agreement.rent * coupon.percentage / 100)
+        } else {
+            agreement.discount = 0;
+            agreement.saved = 0
+        }
+    }
+    const totalPrice = (agreement.rent - agreement.saved) * 100
+    console.log(totalPrice)
+    const { client_secret } = await stripe.paymentIntents.create({
+        amount: totalPrice,
+        currency: 'usd',
+        automatic_payment_methods: {
+            enabled: true,
+        },
+    });
+
+    res.status(200).json({ agreement, clientSecret: client_secret });
 })
 
 app.listen(port, () => console.log(`Server running on http://localhost:${port}`));
