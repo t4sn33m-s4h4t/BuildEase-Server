@@ -138,16 +138,47 @@ app.get('/stats', authenticateUser, verifyAdmin, async (req, res) => {
 })
 
 app.get('/apartments', async (req, res) => {
-    const { page = 1, limit = 6, minRent, maxRent } = req.query;
-    const query = minRent && maxRent ? { rent: { $gte: +minRent, $lte: +maxRent } } : {};
-
+    const { 
+        page = 1, 
+        limit = 8, 
+        minRent, 
+        maxRent, 
+        sortRent  
+    } = req.query;
+    
+    const query = minRent && maxRent 
+    ? { rent: { $gte: +minRent, $lte: +maxRent } } 
+    : {};
+    
     try {
-        const options = { skip: (page - 1) * limit, limit: +limit };
+        
+        const sortOption = sortRent === 'asc' 
+        ? { rent: 1 }   
+        : sortRent === 'desc' 
+        ? { rent: -1 }  
+        : {};           
+        
+        const options = { 
+            skip: (page - 1) * limit, 
+            limit: +limit,
+            sort: sortOption 
+        };
+        
         const count = await apartmentsCollection.countDocuments(query);
         const apartments = await apartmentsCollection.find(query, options).toArray();
-        res.json({ apartments, count });
-    } catch {
-        res.status(500).json({ message: 'Failed to fetch apartments' });
+   
+        
+        res.json({ 
+            apartments, 
+            count,
+            sortOrder: sortRent || 'default'  
+        });
+    } catch (error) {
+        console.log(error)
+        res.status(500).json({ 
+            message: 'Failed to fetch apartments', 
+            error: error.message 
+        });
     }
 });
 
